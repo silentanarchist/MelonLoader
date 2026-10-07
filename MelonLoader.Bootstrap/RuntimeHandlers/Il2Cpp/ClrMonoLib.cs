@@ -15,6 +15,9 @@ internal class ClrMonoLib
     public required PrintUnhandledExceptionDelegate PrintUnhandledException { get; init; }
     public required SetStringDelegate SetLevelString { get; init; }
     public required SetStringDelegate SetMaskString { get; init; }
+    // Warpforge Revival change: optional, used to turn a native crash into a normal Android crash report.
+    public SetBoolDelegate? SetCrashChaining { get; init; }
+    public SetBoolDelegate? SetSignalChaining { get; init; }
 
     public static ClrMonoLib? TryLoad()
     {
@@ -29,8 +32,13 @@ internal class ClrMonoLib
             || !NativeFunc.GetExport<SetStringDelegate>(hRuntime, "mono_trace_set_mask_string", out var setMaskString))
             return null;
 
+        NativeFunc.GetExport<SetBoolDelegate>(hRuntime, "mono_set_crash_chaining", out var setCrashChaining);
+        NativeFunc.GetExport<SetBoolDelegate>(hRuntime, "mono_set_signal_chaining", out var setSignalChaining);
+
         return new()
         {
+            SetCrashChaining = setCrashChaining,
+            SetSignalChaining = setSignalChaining,
             Handle = hRuntime,
             SetThreadChecker = setThreadChecker,
             ThreadSuspendReload = threadSuspendReload,
@@ -54,5 +62,7 @@ internal class ClrMonoLib
     public delegate void PrintUnhandledExceptionDelegate(IntPtr exc);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     public delegate void SetStringDelegate(string str);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void SetBoolDelegate(int value);
 }
 #endif

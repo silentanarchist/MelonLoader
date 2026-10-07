@@ -1,4 +1,4 @@
-#if ANDROID
+﻿#if ANDROID
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -99,35 +99,57 @@ public static class AndroidBootstrap
         return default;
     }
     
+    // Warpforge Revival change.
+    // The copy used to be skipped only when the target folder's "last changed" time was newer than the
+    // patch date. A folder's time only changes when something is added or removed directly in it, and
+    // the copy overwrites files in sub-folders that already exist - so after the first re-patch the
+    // check failed for ever and everything (about 50 MB) was copied again on every start.
+    // Now a small marker file records which patch the folder was copied from.
+    private static bool AlreadyCopied(string folder, string stamp)
+    {
+        try
+        {
+            var marker = Path.Combine(folder, ".copied-from-patch");
+            return Directory.Exists(folder) && File.Exists(marker) && File.ReadAllText(marker).Trim() == stamp;
+        }
+        catch { return false; }
+    }
+
+    private static void MarkCopied(string folder, string stamp)
+    {
+        try { File.WriteAllText(Path.Combine(folder, ".copied-from-patch"), stamp); }
+        catch (Exception e) { MelonDebug.Log("Could not write the copy marker in " + folder + ": " + e.Message); }
+    }
+
     public static void CopyMelonLoaderData(DateTimeOffset date)
     {
         var baseDataDir = Core.DataDir;
         var melonloaderFolder = Path.Combine(Core.DataDir, "MelonLoader");
         var baseInternalFolder = $"/data/data/{PackageName}/";
         var dotnetFolder = $"/data/data/{PackageName}/dotnet";
+        // an unreadable patch date never matches, so the files are then copied as before
+        string stamp = date == default ? "" : date.UtcDateTime.ToString("O");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
 
-        if (Directory.Exists(melonloaderFolder))
-        {
-            var fileModTime = Directory.GetLastWriteTimeUtc(melonloaderFolder);
-            if (fileModTime > date)
-                MelonDebug.Log("MelonLoader folder is already up-to-date");
-            else
-                APKAssetManager.SaveItemToDirectory("MelonLoader", baseDataDir, true);
-        }
+        if (stamp.Length > 0 && AlreadyCopied(melonloaderFolder, stamp))
+            AndroidProxy.Log("MelonLoader folder is already up-to-date");
         else
+        {
             APKAssetManager.SaveItemToDirectory("MelonLoader", baseDataDir, true);
-
-        if (Directory.Exists(dotnetFolder))
-        {
-            var fileModTime = Directory.GetLastWriteTimeUtc(dotnetFolder);
-            if (fileModTime > date)
-                MelonDebug.Log("Dotnet folder is already up-to-date");
-            else
-                APKAssetManager.SaveItemToDirectory("dotnet", baseInternalFolder, true);
+            if (stamp.Length > 0) MarkCopied(melonloaderFolder, stamp);
+            AndroidProxy.Log($"MelonLoader folder copied from the app ({clock.ElapsedMilliseconds} ms)");
         }
+
+        clock.Restart();
+        if (stamp.Length > 0 && AlreadyCopied(dotnetFolder, stamp))
+            AndroidProxy.Log("Dotnet folder is already up-to-date");
         else
+        {
             APKAssetManager.SaveItemToDirectory("dotnet", baseInternalFolder, true);
-    
+            if (stamp.Length > 0) MarkCopied(dotnetFolder, stamp);
+            AndroidProxy.Log($"Dotnet folder copied from the app ({clock.ElapsedMilliseconds} ms)");
+        }
+
         DotnetDir = Path.Combine(dotnetFolder);
     }
 }

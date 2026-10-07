@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -515,14 +515,20 @@ namespace MelonLoader
 
 
         public static unsafe bool IsGame32Bit() =>
-#if X64
+#if X64 || ANDROID
             false;
 #else
             true;
 #endif
 
 
+#if ANDROID
+        // Warpforge Revival change: on Android the game's data sits inside the APK, where a folder
+        // check cannot see it. Android support here is IL2CPP only.
+        public static bool IsGameIl2Cpp() => true;
+#else
         public static bool IsGameIl2Cpp() => Directory.Exists(MelonEnvironment.Il2CppDataDirectory);
+#endif
 
         public static bool IsOldMono()
         {

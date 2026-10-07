@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net.Http;
 using MelonLoader.Il2CppAssemblyGenerator.Packages;
 using MelonLoader.Il2CppAssemblyGenerator.Packages.Models;
@@ -55,6 +55,18 @@ namespace MelonLoader.Il2CppAssemblyGenerator
 
         private static int Run()
         {
+#if ANDROID
+            // Reading the game's code needs tools that do not run on a phone, so this build ships the
+            // result ready-made (made on a PC from the same game files).
+            string shipped = Path.Combine(MelonEnvironment.Il2CppAssembliesDirectory, "Assembly-CSharp.dll");
+            if (File.Exists(shipped))
+            {
+                Logger.Msg("Using the pre-generated assemblies shipped with this build. No Generation Needed.");
+                return 0;
+            }
+            Logger.Error("Pre-generated assemblies not found at: " + shipped);
+            return 1;
+#endif
             Config.Initialize();
 
             if (!LoaderConfig.Current.UnityEngine.ForceOfflineGeneration)

@@ -1,4 +1,4 @@
-﻿#if ANDROID
+#if ANDROID
 using System;
 
 namespace MelonLoader.Java;
@@ -29,6 +29,16 @@ public class JObject : IDisposable
     {
         if (Disposed || this.Handle == IntPtr.Zero)
             return;
+
+        // Warpforge Revival change: when the garbage collector cleans this up it runs on its own
+        // thread, which has no Java environment; releasing the reference from there threw and took
+        // the whole game down at start-up. A reference that was not released by hand is simply
+        // left to the Java side.
+        if (!disposing)
+        {
+            Disposed = true;
+            return;
+        }
 
         switch (this.ReferenceType)
         {

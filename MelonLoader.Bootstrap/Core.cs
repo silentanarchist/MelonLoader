@@ -164,6 +164,10 @@ public static class Core
         // Override configs defined by launch options, without overriding the file
 
         LoaderConfig.Current.Loader.BaseDirectory = baseDir;
+#if ANDROID
+        // Warpforge Revival test build: always log in detail, there is no other way to see what happened.
+        LoaderConfig.Current.Loader.DebugMode = true;
+#endif
 
         if (ArgParser.IsDefined("melonloader.debug"))
             LoaderConfig.Current.Loader.DebugMode = true;

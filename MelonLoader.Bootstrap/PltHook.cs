@@ -64,6 +64,21 @@ internal static partial class PltHook
         {
             pltHookOpened = PlthookOpen(ref pltHook, PlayerFileName) == 0;
         }
+#elif ANDROID
+        // Warpforge Revival change: on Android the library cannot be opened by name or handle (that
+        // route looks for symbols libunity.so does not export), so open it by an address inside it.
+        pltHookOpened = false;
+        if (NativeLibrary.TryLoad("libunity.so", out nint unityLib)
+            && NativeLibrary.TryGetExport(unityLib, "JNI_OnLoad", out nint insideUnity))
+        {
+            pltHookOpened = PlthookOpenByAddress(ref pltHook, insideUnity) == 0;
+            if (!pltHookOpened)
+                MelonLogger.LogError($"plthook_open_by_address error: {Marshal.PtrToStringAuto(PlthookError())}");
+        }
+        else
+            MelonLogger.LogError("libunity.so or its JNI_OnLoad was not found; cannot hook it");
+        if (!pltHookOpened)
+            pltHookOpened = PlthookOpen(ref pltHook, PlayerFileName) == 0;
 #else
         pltHookOpened = PlthookOpen(ref pltHook, PlayerFileName) == 0;
 #endif
@@ -78,12 +93,12 @@ internal static partial class PltHook
         {
             if (PlthookReplace(pltHook, hook.functionName, hook.hookFunctionPtr, IntPtr.Zero) != 0)
             {
-                MelonDebug.Log($"plthook_replace error when hooking {hook.functionName}: " +
+                MelonLogger.LogError($"plthook_replace error when hooking {hook.functionName}: " +
                                $"{Marshal.PtrToStringAuto(PlthookError())}");
                 continue;
             }
 
-            MelonDebug.Log($"Plt hooked {hook.functionName} successfully");
+            MelonLogger.Log(MelonLoader.Logging.ColorARGB.Gray, $"Plt hooked {hook.functionName} successfully");
         }
         
         PlthookClose(pltHook);

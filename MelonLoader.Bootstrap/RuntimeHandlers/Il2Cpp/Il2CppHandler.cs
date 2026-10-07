@@ -189,6 +189,13 @@ internal static class Il2CppHandler
         mono.SetThreadChecker(MonoCheckThread);
 
         MelonDebug.Log("Installed thread checker");
+
+        // Warpforge Revival change: without this the runtime answers a native crash by calling exit(),
+        // which hangs the app with no report. With it, the crash is passed on to Android's own
+        // crash reporter, so the app closes and leaves a report saying where it crashed.
+        mono.SetSignalChaining?.Invoke(1);
+        mono.SetCrashChaining?.Invoke(1);
+        MelonDebug.Log($"Crash chaining {(mono.SetCrashChaining != null ? "enabled" : "not available")}");
     }
 
     private static void MonoUnhandledExceptionHandler(IntPtr exc, IntPtr userData)
@@ -201,6 +208,11 @@ internal static class Il2CppHandler
 
     private static bool MonoCheckThread(ulong threadId)
     {
+        // Warpforge Revival change: this is always asked about the thread it is called on, so
+        // "is this thread attached to IL2CPP" can be answered directly when the list is not exported.
+        if (il2cpp.GetAllAttachedThreads == null)
+            return il2cpp.ThreadCurrent!() == 0;
+
         UIntPtr size = 0;
 
         IntPtr threads = il2cpp.GetAllAttachedThreads(ref size);

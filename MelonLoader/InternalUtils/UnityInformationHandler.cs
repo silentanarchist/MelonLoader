@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -45,9 +45,41 @@ namespace MelonLoader.InternalUtils
             if (!string.IsNullOrEmpty(LoaderConfig.Current.UnityEngine.VersionOverride))
                 EngineVersion = TryParse(LoaderConfig.Current.UnityEngine.VersionOverride);
 
+#if ANDROID
+            // Warpforge Revival change: reading this out of the APK means loading the game's whole
+            // data file (hundreds of MB) and can take minutes on a phone. The patch folder ships the
+            // answers in MelonLoader/game-info.txt (name, developer, game version, Unity version).
+            bool shipped = false;
+            try
+            {
+                string infoFile = Path.Combine(MelonEnvironment.MelonLoaderDirectory, "game-info.txt");
+                if (File.Exists(infoFile))
+                {
+                    string[] info = File.ReadAllLines(infoFile);
+                    if (info.Length >= 4)
+                    {
+                        GameName = info[0].Trim();
+                        GameDeveloper = info[1].Trim();
+                        GameVersion = info[2].Trim();
+                        if (EngineVersion == UnityVersion.MinVersion)
+                            EngineVersion = TryParse(info[3].Trim());
+                        shipped = EngineVersion != UnityVersion.MinVersion;
+                    }
+                }
+            }
+            catch (Exception ex) { MelonLogger.Warning("game-info.txt: " + ex.Message); }
+
+            if (!shipped)
+            {
+                AssetsManager assetsManagerA = new AssetsManager();
+                ReadGameInfo(assetsManagerA, gameDataPath);
+                assetsManagerA.UnloadAll();
+            }
+#else
             AssetsManager assetsManager = new AssetsManager();
             ReadGameInfo(assetsManager, gameDataPath);
             assetsManager.UnloadAll();
+#endif
 
 #if !ANDROID
             if (string.IsNullOrEmpty(GameDeveloper)

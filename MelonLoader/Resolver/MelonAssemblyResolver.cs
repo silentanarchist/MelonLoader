@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Reflection;
 using MelonLoader.Utils;
@@ -20,6 +20,12 @@ public class MelonAssemblyResolver
 
         // Setup Search Directories
         AddSearchDirectory(MelonEnvironment.OurRuntimeDirectory);
+#if ANDROID
+        // Warpforge Revival change: the game's generated assemblies must be findable from the very
+        // start. On Android's Mono-based runtime a reference that fails to resolve once is remembered
+        // as missing for good, and the loader's early fixes touch code that needs Il2Cppmscorlib.
+        AddSearchDirectory(MelonEnvironment.Il2CppAssembliesDirectory);
+#endif
 
         // Setup Redirections
         OverrideBaseAssembly();

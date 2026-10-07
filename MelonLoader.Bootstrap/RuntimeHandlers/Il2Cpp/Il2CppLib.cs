@@ -9,15 +9,22 @@ internal class Il2CppLib(Il2CppLib.MethodGetNameFn methodGetName)
 
     public required InitFn Init { get; init; }
     public required RuntimeInvokeFn RuntimeInvoke { get; init; }
-    public required GetAllAttachedThreadsDelegate GetAllAttachedThreads { get; init; }
+    // Warpforge Revival change: some games do not export il2cpp_thread_get_all_attached_threads
+    // (Warpforge for Android is one), so it is optional and il2cpp_thread_current is used instead.
+    public GetAllAttachedThreadsDelegate? GetAllAttachedThreads { get; init; }
+    public ThreadCurrentFn? ThreadCurrent { get; init; }
 
     public static Il2CppLib? TryLoad(nint hRuntime)
     {
         if (!NativeFunc.GetExport<InitFn>(hRuntime, "il2cpp_init", out var init)
             || !NativeFunc.GetExport<RuntimeInvokeFn>(hRuntime, "il2cpp_runtime_invoke", out var runtimeInvoke)
             || !NativeFunc.GetExport<MethodGetNameFn>(hRuntime, "il2cpp_method_get_name", out var methodGetName)
-            || !NativeFunc.GetExport<GetAllAttachedThreadsDelegate>(hRuntime, "il2cpp_thread_get_all_attached_threads", out var getAllAttached)
             )
+            return null;
+
+        var getAllAttached = NativeFunc.GetExport<GetAllAttachedThreadsDelegate>(hRuntime, "il2cpp_thread_get_all_attached_threads");
+        var threadCurrent = NativeFunc.GetExport<ThreadCurrentFn>(hRuntime, "il2cpp_thread_current");
+        if (getAllAttached == null && threadCurrent == null)
             return null;
 
         return new(methodGetName)
@@ -25,7 +32,8 @@ internal class Il2CppLib(Il2CppLib.MethodGetNameFn methodGetName)
             Handle = hRuntime,
             Init = init,
             RuntimeInvoke = runtimeInvoke,
-            GetAllAttachedThreads = getAllAttached
+            GetAllAttachedThreads = getAllAttached,
+            ThreadCurrent = threadCurrent
         };
     }
 
@@ -42,6 +50,8 @@ internal class Il2CppLib(Il2CppLib.MethodGetNameFn methodGetName)
     public delegate nint MethodGetNameFn(nint method);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     public delegate IntPtr GetAllAttachedThreadsDelegate(ref UIntPtr size);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate nint ThreadCurrentFn();
 }
 
 [StructLayout(LayoutKind.Sequential)]

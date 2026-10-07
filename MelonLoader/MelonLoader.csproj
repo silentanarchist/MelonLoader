@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFrameworks>net35;net6</TargetFrameworks>
         <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -45,7 +45,7 @@
         <PackageReference Include="Mono.Cecil" Version="0.10.4" />
     </ItemGroup>
     <ItemGroup Condition="'$(TargetFramework)' == 'net6'">
-        <PackageReference Include="AsmResolver.DotNet" Version="6.0.0-beta.1" />
+        <PackageReference Include="AsmResolver.DotNet" Version="6.0.0-beta.5" />
         <PackageReference Include="Microsoft.Diagnostics.Runtime" Version="3.1.512801" />
         <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.1" />
         <PackageReference Include="System.Runtime.InteropServices.RuntimeInformation" Version="4.3.0" />

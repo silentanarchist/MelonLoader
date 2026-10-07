@@ -1,4 +1,4 @@
-﻿#if NET6_0_OR_GREATER
+#if NET6_0_OR_GREATER
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -405,19 +405,22 @@ namespace MelonLoader.Fixes
             return true;
         }
 
+        private static string NStr(string value) => value;
+        private static string NStr(IntPtr value) => value == IntPtr.Zero ? null : Marshal.PtrToStringAnsi(value);
+
         private static bool RewriteGlobalContext_TryGetNewTypeForOriginal_Prefix(RewriteGlobalContext __instance,
             TypeDefinition __0,
             ref TypeRewriteContext? __result)
         {
             if ((__instance == null)
                 || (__0 == null)
-                || (__0.Module == null)
-                || (__0.Module.Assembly == null)
+                || (__0.DeclaringModule == null)
+                || (__0.DeclaringModule.Assembly == null)
                 || !_assemblyLookup.TryGetValue(__instance, out Dictionary<string, AssemblyRewriteContext> contexts)
                 || (contexts == null))
                 return true;
 
-            string assemblyName = __0.Module.Assembly.Name;
+            string assemblyName = __0.DeclaringModule.Assembly.Name;
             if (string.IsNullOrEmpty(assemblyName)) 
                 return false;
 
@@ -462,27 +465,29 @@ namespace MelonLoader.Fixes
             if (klass == IntPtr.Zero)
                 return true;
 
-            IntPtr klassNamespace = IL2CPP.il2cpp_class_get_namespace(klass);
-            if (klassNamespace == IntPtr.Zero)
+            // Warpforge Revival change: written to compile against both forms of these calls
+            // (they return a string in the ARM64 Il2CppInterop, a pointer in newer ones).
+            var klassNamespace = IL2CPP.il2cpp_class_get_namespace(klass);
+            if (NStr(klassNamespace) == null)
                 return true;
 
-            IntPtr klassName = IL2CPP.il2cpp_class_get_name(klass);
-            if (klassName == IntPtr.Zero)
+            var klassName = IL2CPP.il2cpp_class_get_name(klass);
+            if (NStr(klassName) == null)
                 return true;
 
-            string klassNameStr = Marshal.PtrToStringAnsi(klassName);
+            string klassNameStr = NStr(klassName);
             if (string.IsNullOrEmpty(klassNameStr))
                 return true;
 
             string fullTypeName = klassNameStr;
-            if (klassNamespace != IntPtr.Zero)
+            if (NStr(klassNamespace) != null)
             {
-                string klassNamespaceStr = Marshal.PtrToStringAnsi(klassNamespace);
+                string klassNamespaceStr = NStr(klassNamespace);
                 if (!string.IsNullOrEmpty(klassNamespaceStr))
                     fullTypeName = $"{klassNamespaceStr}.{klassNameStr}";
             }
 
-            var assemblyName = "Il2Cpp" + Marshal.PtrToStringAnsi(IL2CPP.il2cpp_class_get_assemblyname(klass));
+            var assemblyName = "Il2Cpp" + NStr(IL2CPP.il2cpp_class_get_assemblyname(klass));
 
             Assembly asm;
             try
@@ -616,7 +621,7 @@ namespace MelonLoader.Fixes
                             var parameterInfo = UnityVersionHandler.Wrap(baseMethod.Parameters, i);
                             var otherParameterInfo = UnityVersionHandler.Wrap(m.Parameters, i);
 
-                            if (Marshal.PtrToStringAnsi(parameterName) != Marshal.PtrToStringAnsi(otherParameterName))
+                            if (NStr(parameterName) != NStr(otherParameterName))
                                 return false;
 
                             string parameterTypeName = (string)_getIl2CppTypeFullName.Invoke(null, [(IntPtr)parameterInfo.ParameterType]);
