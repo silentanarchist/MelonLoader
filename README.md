@@ -1,3 +1,9 @@
+> **About this branch (`warpforge-revival`).** This is a fork changed for the
+> [Warpforge Revival Android project](https://github.com/silentanarchist/warpforge-revival-mod-android).
+> AI (Anthropic's Claude) was used to modify it to fit the needs of that project's mod. The changes
+> have been tried on only a few devices and are not part of, or endorsed by, the original project.
+> Everything below this note is the original project's own README.
+
 
 <p align="center">
   <a href="#"><img src="https://i.imgur.com/z06P0RG.png"></a>
