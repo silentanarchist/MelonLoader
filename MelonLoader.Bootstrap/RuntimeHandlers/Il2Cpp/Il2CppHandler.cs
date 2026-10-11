@@ -59,8 +59,34 @@ internal static class Il2CppHandler
         return domain;
     }
 
+#if ANDROID
+    [DllImport("libc.so", EntryPoint = "setenv")]
+    private static extern int SetEnv(string name, string value, int overwrite);
+
+    // Warpforge Revival change: a larger first area ("nursery") for the loader's .NET memory, so it has
+    // to clean up far less often while the mod starts. On a Pixel 6 Pro the runtime crashed while
+    // allocating during start-up; every clean-up stops all threads with signals that the game's own
+    // garbage collector also uses, so fewer clean-ups means fewer chances to collide. The default
+    // nursery is 4 MB; 64 MB is small next to a phone's memory. An already set value is kept.
+    private const string GcParams = "nursery-size=64m";
+
+    private static void SetRuntimeMemory()
+    {
+        try
+        {
+            string? had = Environment.GetEnvironmentVariable("MONO_GC_PARAMS");
+            if (string.IsNullOrEmpty(had)) SetEnv("MONO_GC_PARAMS", GcParams, 0);
+            Core.Logger.Msg($"Runtime memory settings: {(string.IsNullOrEmpty(had) ? GcParams : had + " (already set)")}");
+        }
+        catch (Exception e) { Core.Logger.Error("Could not set the runtime memory settings: " + e.Message); }
+    }
+#endif
+
     private static void InitializeManaged()
     {
+#if ANDROID
+        SetRuntimeMemory();
+#endif
         var managedDir = Path.Combine(LoaderConfig.Current.Loader.BaseDirectory, "MelonLoader", DOTNET_VERSION);
         var runtimeConfigPath = Path.Combine(managedDir, "MelonLoader.runtimeconfig.json");
         var nativeHostPath = Path.Combine(managedDir, "MelonLoader.NativeHost.dll");
