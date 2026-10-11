@@ -41,23 +41,18 @@ public static partial class Dobby
         try
         {
             uint* code = (uint*)target;
+            // Warpforge Revival change (3): a function that already carries a hook starts with the hook's own
+            // stub (ldr x17, #8 / br x17); that br is not the function's end. Seen when a 16-byte hook on a
+            // 4-byte function had spilled into the next one. Hooking it again gets the normal kind.
+            if (code[0] == 0x58000051 && code[1] == 0xD61F0220) return false;
             for (int i = 0; i < 3; i++)
             {
                 uint insn = code[i];
                 if (insn == 0xD65F03C0) return true;                      // ret
-                if ((insn & 0xFC000000) == 0x14000000)                    // b <somewhere>
-                {
-                    // Warpforge Revival change (3): a jump that lands inside the 16 bytes a normal hook
-                    // overwrites is padding (e.g. AlliancesTab.ToFocus starts with a jump to its own next
-                    // instruction), not the end of the function; the code goes on past the window. Treating
-                    // it as the end gave that function the 4-byte hook every start, and that hook's relay is
-                    // the only thing in the game placed at a chosen address (MAP_FIXED) - suspected of landing
-                    // on the runtime's memory now and then (crashes while the hooks were being applied).
-                    long offset = ((int)(insn << 6) >> 6) * 4L;              // signed imm26 * 4
-                    long dest = (long)target + i * 4 + offset;
-                    if (dest > (long)target && dest < (long)target + 16) continue;
-                    return true;
-                }
+                if ((insn & 0xFC000000) == 0x14000000) return true;       // b <somewhere> (a jump to the very next
+                                                                          // address can be a tail call into the next
+                                                                          // function - AlliancesTab.ToFocus is exactly
+                                                                          // that - so it counts as the end too)
                 if ((insn & 0xFFFFFC1F) == 0xD61F0000) return true;       // br xN
             }
         }

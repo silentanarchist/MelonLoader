@@ -86,18 +86,18 @@ internal static partial class CrashWatch
 
     // Deps/faultprobe/faultprobe.c, linked into libmain: looks at every memory fault before the runtime does.
     // Faults in managed code go on to the runtime (that is how a NullReferenceException starts); a fault in
-    // native code is logged with its address and the memory mappings around it ("[fault]" lines), then
-    // handed to Android's own crash handler, which writes the full report and ends the game at once.
+    // native code is logged with its address and the memory mappings around it ("[fault]" lines), then the
+    // thread aborts through Android's own abort handler, which writes the full report and ends the game at once.
     [System.Runtime.InteropServices.LibraryImport("*", EntryPoint = "wf_faultprobe_install")]
     [System.Runtime.InteropServices.UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    private static partial int FaultProbeInstall(IntPtr androidSegv, IntPtr androidBus, IntPtr runtime);
+    private static partial int FaultProbeInstall(IntPtr androidAbort, IntPtr runtime);
 
     /// <summary>Called once the runtime has its own fault handlers in place; `runtime` is libcoreclr's handle.</summary>
     public static void InstallFaultProbe(IntPtr runtime)
     {
         try
         {
-            int rc = FaultProbeInstall(androidSegvHandler, androidBusHandler, runtime);
+            int rc = FaultProbeInstall(androidAbortHandler, runtime);
             if (rc == 0) Core.Logger.Msg("Fault probe in place: a crash in native code is logged with its address and goes to Android's crash report");
             else Core.Logger.Warning($"Fault probe not installed ({rc}); crashes are reported the old way");
         }

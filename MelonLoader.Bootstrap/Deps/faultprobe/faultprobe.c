@@ -24,6 +24,7 @@
 #include <sys/syscall.h>
 #include <sys/ucontext.h>
 #include <dlfcn.h>
+#include <stdlib.h>
 
 typedef void *(*domain_get_fn)(void);
 typedef void *(*jit_find_fn)(void *, void *);
@@ -31,8 +32,8 @@ typedef void *(*jit_find_fn)(void *, void *);
 static domain_get_fn mono_domain_get_p;
 static jit_find_fn mono_jit_info_table_find_p;
 static struct sigaction prev_segv, prev_bus;          /* Mono's handlers, installed before this one */
-static struct sigaction android_segv, android_bus;    /* Android's, saved before any runtime started */
-static int have_android_segv, have_android_bus;
+static struct sigaction android_abort;                /* Android's SIGABRT handler, saved before any runtime started */
+static int have_android_abort;
 static volatile int reported;
 static void (*log_write)(int, const char *, const char *);   /* liblog, looked up at install time */
 
@@ -148,17 +149,19 @@ static void handler(int sig, siginfo_t *si, void *ctx)
         m = put(m, ", thread "); m = put_dec(m, (int64_t)syscall(SYS_gettid));
         *m = 0; out(msg);
         show_maps(addr, pc);
-        out("[fault] handing the fault to Android for its crash report");
+        out("[fault] ending the game through Android's crash report (abort on this thread)");
     }
 
-    /* Android's handler back in place; returning re-runs the faulting instruction, which faults again. */
-    if (sig == SIGSEGV && have_android_segv) sigaction(SIGSEGV, &android_segv, 0);
-    else if (sig == SIGBUS && have_android_bus) sigaction(SIGBUS, &android_bus, 0);
-    else { signal(sig, SIG_DFL); }
+    /* Android's own crash report comes from an abort on this very thread: its report then shows this
+       thread's stack, and the unwinder walks through the signal frame down to the faulting code and
+       its callers. (Putting the saved SIGSEGV action back and returning only ended the game silently:
+       what the loader had saved for SIGSEGV was the plain default.) */
+    if (have_android_abort) sigaction(SIGABRT, &android_abort, 0);
+    abort();
 }
 
 /* android_* are the struct sigaction bytes saved at start-up (may be null); runtime is a dlopen handle of libcoreclr.so. */
-int wf_faultprobe_install(const void *android_segv_bytes, const void *android_bus_bytes, void *runtime)
+int wf_faultprobe_install(const void *android_abort_bytes, void *runtime)
 {
     void *liblog = dlopen("liblog.so", RTLD_NOW);
     if (liblog) log_write = (void (*)(int, const char *, const char *))dlsym(liblog, "__android_log_write");
@@ -167,8 +170,7 @@ int wf_faultprobe_install(const void *android_segv_bytes, const void *android_bu
         mono_jit_info_table_find_p = (jit_find_fn)dlsym(runtime, "mono_jit_info_table_find");
     }
     if (!mono_domain_get_p || !mono_jit_info_table_find_p) return -1;     /* cannot tell managed from native: stay out */
-    if (android_segv_bytes) { memcpy(&android_segv, android_segv_bytes, sizeof android_segv); have_android_segv = 1; }
-    if (android_bus_bytes) { memcpy(&android_bus, android_bus_bytes, sizeof android_bus); have_android_bus = 1; }
+    if (android_abort_bytes) { memcpy(&android_abort, android_abort_bytes, sizeof android_abort); have_android_abort = 1; }
 
     struct sigaction sa; memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = handler;
