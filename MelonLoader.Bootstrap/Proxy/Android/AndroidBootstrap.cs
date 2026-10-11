@@ -15,6 +15,9 @@ public static class AndroidBootstrap
     [RequiresDynamicCode("Calls Init then InitConfig ")]
     public static unsafe int LoadBootstrap()
     {
+        // Warpforge Revival change: keep Android's crash handler before anything else replaces it (see CrashWatch)
+        CrashWatch.SaveAndroidHandler();
+
         // linux-bionic .NET logs everything to stdout/err, this allows us to see these logs in logcat with our logs
         StdRedirect.RedirectStdOut();
         StdRedirect.RedirectStdErr();
