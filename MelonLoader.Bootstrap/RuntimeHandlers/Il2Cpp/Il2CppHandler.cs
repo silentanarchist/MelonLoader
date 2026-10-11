@@ -66,7 +66,7 @@ internal static class Il2CppHandler
     // Warpforge Revival change: settings for the loader's .NET memory, read before the runtime starts.
     // On a Pixel 6 Pro the runtime crashed now and then while allocating during start-up. The settings
     // come from UserData/runtime-gc.txt, which the mod writes, so a new setting can be tried with a
-    // mod update instead of patching the game again; it takes effect at the next start. Only two
+    // mod update instead of patching the game again; it takes effect at the next start. Only three
     // runtime variables are read from it (MONO_GC_PARAMS and MONO_GC_DEBUG), each line
     // "NAME=value" with a short plain value; anything else in the file is ignored. Without the
     // file the first memory area ("nursery") is made 64 MB instead of 4 MB, so the runtime has to
@@ -91,7 +91,12 @@ internal static class Il2CppHandler
                     int eq = line.IndexOf('=');
                     if (line.Length == 0 || line.StartsWith('#') || eq <= 0) continue;
                     string name = line.Substring(0, eq).Trim(), value = line.Substring(eq + 1).Trim();
-                    if ((name == "MONO_GC_PARAMS" || name == "MONO_GC_DEBUG") && SafeValue.IsMatch(value)) wanted[name] = value;
+                    // MONO_THREADS_SUSPEND: how the runtime stops threads for its garbage collector. On Android it
+                    // uses the signals SIGPWR and SIGXCPU for that, the same two the game's own collector uses;
+                    // "coop" makes it use none (threads stop at safe points instead), which ends that clash.
+                    bool known = name == "MONO_GC_PARAMS" || name == "MONO_GC_DEBUG" ||
+                                 (name == "MONO_THREADS_SUSPEND" && (value == "coop" || value == "hybrid" || value == "preemptive"));
+                    if (known && SafeValue.IsMatch(value)) wanted[name] = value;
                     else Core.Logger.Msg($"Runtime memory settings: ignored line '{line}'");
                 }
             }
