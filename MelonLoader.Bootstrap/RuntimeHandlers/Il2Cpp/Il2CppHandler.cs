@@ -257,6 +257,9 @@ internal static class Il2CppHandler
         mono.SetSignalChaining?.Invoke(1);
         mono.SetCrashChaining?.Invoke(1);
         MelonDebug.Log($"Crash chaining {(mono.SetCrashChaining != null ? "enabled" : "not available")}");
+
+        // Warpforge Revival change: see CrashWatch.InstallFaultProbe. After the runtime's handlers, so it runs first.
+        MelonLoader.Bootstrap.Proxy.Android.CrashWatch.InstallFaultProbe(mono.Handle);
     }
 
     private static void MonoUnhandledExceptionHandler(IntPtr exc, IntPtr userData)

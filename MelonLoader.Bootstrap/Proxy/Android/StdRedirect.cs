@@ -13,7 +13,7 @@ namespace MelonLoader.Bootstrap.Proxy.Android;
 /// written (it says where the crash happened), only the first part of it is kept, and then the game is
 /// closed. A closed game can simply be started again.
 /// </summary>
-internal static class CrashWatch
+internal static partial class CrashWatch
 {
     [DllImport("libc.so")] private static extern int getpid();
     [DllImport("libc.so")] private static extern int kill(int pid, int sig);
@@ -71,6 +71,8 @@ internal static class CrashWatch
     // thread's call stack, including the thread that crashed), which the log script collects from
     // the phone's crash reports. The bytes are kept as they are (no need to know the struct's layout).
     private static IntPtr androidAbortHandler, androidSegvHandler, androidBusHandler;
+    internal static IntPtr AndroidSegvHandler => androidSegvHandler;
+    internal static IntPtr AndroidBusHandler => androidBusHandler;
     private const int SIGBUS = 7, SIGSEGV = 11;
 
     private static IntPtr SaveHandler(int sig)
@@ -80,6 +82,26 @@ internal static class CrashWatch
         if (sigaction(sig, IntPtr.Zero, buf) == 0) return buf;
         Marshal.FreeHGlobal(buf);
         return IntPtr.Zero;
+    }
+
+    // Deps/faultprobe/faultprobe.c, linked into libmain: looks at every memory fault before the runtime does.
+    // Faults in managed code go on to the runtime (that is how a NullReferenceException starts); a fault in
+    // native code is logged with its address and the memory mappings around it ("[fault]" lines), then
+    // handed to Android's own crash handler, which writes the full report and ends the game at once.
+    [System.Runtime.InteropServices.LibraryImport("*", EntryPoint = "wf_faultprobe_install")]
+    [System.Runtime.InteropServices.UnmanagedCallConv(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+    private static partial int FaultProbeInstall(IntPtr androidSegv, IntPtr androidBus, IntPtr runtime);
+
+    /// <summary>Called once the runtime has its own fault handlers in place; `runtime` is libcoreclr's handle.</summary>
+    public static void InstallFaultProbe(IntPtr runtime)
+    {
+        try
+        {
+            int rc = FaultProbeInstall(androidSegvHandler, androidBusHandler, runtime);
+            if (rc == 0) Core.Logger.Msg("Fault probe in place: a crash in native code is logged with its address and goes to Android's crash report");
+            else Core.Logger.Warning($"Fault probe not installed ({rc}); crashes are reported the old way");
+        }
+        catch (Exception e) { Core.Logger.Warning("Fault probe not installed: " + e.Message); }
     }
 
     /// <summary>Called first thing at start-up, before IL2CPP and .NET install their own handlers.</summary>

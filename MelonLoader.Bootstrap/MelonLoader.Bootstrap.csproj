@@ -93,6 +93,11 @@
         <NativeLibrary Include="Deps/$(RuntimeIdentifier)/$(LibPrefix)plthook$(LibExt)" />
     </ItemGroup>
 
+    <!-- Warpforge Revival change: a first look at memory faults on Android (Deps/faultprobe/faultprobe.c, built by its build.sh) -->
+    <ItemGroup Condition="'$(RuntimeIdentifier.StartsWith(`linux-bionic-`))' == 'true'">
+        <NativeLibrary Include="Deps/$(RuntimeIdentifier)/faultprobe.o" />
+    </ItemGroup>
+
     <!-- For some reasons, the linux export file .NET auto generate after compilation contains a
     hardcoded
          version being "V1.0". This is bad for us because it means every symbols we export will have
