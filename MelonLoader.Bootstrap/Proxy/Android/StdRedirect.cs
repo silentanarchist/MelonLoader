@@ -70,17 +70,26 @@ internal static class CrashWatch
     // Closing the game through it makes Android write its full crash report ("tombstone": every
     // thread's call stack, including the thread that crashed), which the log script collects from
     // the phone's crash reports. The bytes are kept as they are (no need to know the struct's layout).
-    private static IntPtr androidAbortHandler;
+    private static IntPtr androidAbortHandler, androidSegvHandler, androidBusHandler;
+    private const int SIGBUS = 7, SIGSEGV = 11;
+
+    private static IntPtr SaveHandler(int sig)
+    {
+        IntPtr buf = Marshal.AllocHGlobal(256);
+        for (int i = 0; i < 256; i += 8) Marshal.WriteInt64(buf, i, 0);
+        if (sigaction(sig, IntPtr.Zero, buf) == 0) return buf;
+        Marshal.FreeHGlobal(buf);
+        return IntPtr.Zero;
+    }
 
     /// <summary>Called first thing at start-up, before IL2CPP and .NET install their own handlers.</summary>
     public static void SaveAndroidHandler()
     {
         try
         {
-            IntPtr buf = Marshal.AllocHGlobal(256);
-            for (int i = 0; i < 256; i += 8) Marshal.WriteInt64(buf, i, 0);
-            if (sigaction(SIGABRT, IntPtr.Zero, buf) == 0) androidAbortHandler = buf;
-            else Marshal.FreeHGlobal(buf);
+            androidAbortHandler = SaveHandler(SIGABRT);
+            androidSegvHandler = SaveHandler(SIGSEGV);
+            androidBusHandler = SaveHandler(SIGBUS);
         }
         catch { }
     }
@@ -119,16 +128,16 @@ internal static class CrashWatch
                 fallback.Start();
                 if (androidAbortHandler != IntPtr.Zero)
                 {
+                    // The crashed thread keeps re-running the runtime's broken crash report, faulting again on every
+                    // round. With Android's own handlers for memory faults put back, its next fault goes to Android,
+                    // which writes its full report with that thread's stack: the crash itself is further down it.
+                    // (Sending the thread an abort instead ended the game at once with no report, 21:25.)
+                    __android_log_write(6, "MelonLoader", $"[crash watch] the crashed thread looks like {crashedTid} ({crashedName}); Android's fault handlers put back so its next fault writes Android's crash report");
+                    if (androidSegvHandler != IntPtr.Zero) sigaction(SIGSEGV, androidSegvHandler, IntPtr.Zero);
+                    if (androidBusHandler != IntPtr.Zero) sigaction(SIGBUS, androidBusHandler, IntPtr.Zero);
                     sigaction(SIGABRT, androidAbortHandler, IntPtr.Zero);
-                    if (crashedTid > 0)
-                    {
-                        // Android's report then shows that thread's stack, down through the crash
-                        __android_log_write(6, "MelonLoader", $"[crash watch] the crashed thread looks like {crashedTid} ({crashedName}); handing it to Android for its crash report");
-                        tgkill(getpid(), crashedTid, SIGABRT);
-                        Thread.Sleep(2500);
-                        __android_log_write(6, "MelonLoader", "[crash watch] that thread did not take it; closing from here instead");
-                    }
-                    else __android_log_write(6, "MelonLoader", "[crash watch] handing the crash to Android for its crash report");
+                    Thread.Sleep(3000);
+                    __android_log_write(6, "MelonLoader", "[crash watch] no fault came; closing from here instead");
                     abort();
                 }
                 kill(getpid(), SIGKILL);
