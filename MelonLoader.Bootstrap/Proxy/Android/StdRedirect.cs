@@ -1,5 +1,6 @@
 ﻿#if ANDROID
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
 using System.Text;
 
 namespace MelonLoader.Bootstrap.Proxy.Android;
@@ -18,6 +19,49 @@ internal static class CrashWatch
     [DllImport("libc.so")] private static extern int kill(int pid, int sig);
     [DllImport("libc.so")] private static extern int sigaction(int sig, IntPtr act, IntPtr oldact);
     [DllImport("libc.so")] private static extern void abort();
+    [DllImport("libc.so")] private static extern int tgkill(int tgid, int tid, int sig);
+    [DllImport("libc.so")] private static extern int gettid();
+
+    // The thread that crashed keeps re-running the runtime's broken crash report, so it is the busiest
+    // thread: the one whose CPU time grows most over a second. Android's report is made from the thread
+    // that receives the abort, so the abort is sent to that one.
+    private static (int tid, string name) BusiestThread(int skip1, int skip2)
+    {
+        static Dictionary<int, long> Times()
+        {
+            var d = new Dictionary<int, long>();
+            foreach (var dir in Directory.GetDirectories("/proc/self/task"))
+            {
+                try
+                {
+                    int tid = int.Parse(Path.GetFileName(dir));
+                    string stat = File.ReadAllText(Path.Combine(dir, "stat"));
+                    var f = stat.Substring(stat.LastIndexOf(')') + 2).Split(' ');
+                    d[tid] = long.Parse(f[11]) + long.Parse(f[12]);       // utime + stime
+                }
+                catch { }
+            }
+            return d;
+        }
+        try
+        {
+            var a = Times();
+            Thread.Sleep(1000);
+            var b = Times();
+            int best = 0; long most = -1;
+            foreach (var kv in b)
+            {
+                if (kv.Key == skip1 || kv.Key == skip2 || !a.TryGetValue(kv.Key, out long was)) continue;
+                if (kv.Value - was > most) { most = kv.Value - was; best = kv.Key; }
+            }
+            string name = "";
+            try { name = File.ReadAllText($"/proc/self/task/{best}/comm").Trim(); } catch { }
+            return (best, name);
+        }
+        catch { return (0, ""); }
+    }
+
+    private static int watcherTid;
     [DllImport("liblog.so")] private static extern int __android_log_write(int prio, string tag, string text);
 
     private const int SIGKILL = 9, SIGABRT = 6;
@@ -60,9 +104,14 @@ internal static class CrashWatch
             if (!text.Contains(m, StringComparison.Ordinal)) continue;
             if (Interlocked.Exchange(ref crashed, 1) != 0) break;
             __android_log_write(6, "MelonLoader", "[crash watch] the loader's .NET crashed (" + m.Trim('*', ' ', ':') + "); the game will be closed in a few seconds");
+            int logTid = 0;
+            try { logTid = gettid(); } catch { }
             var closer = new Thread(() =>
             {
-                Thread.Sleep(CloseAfterMs);
+                int me = 0;
+                try { me = gettid(); } catch { }
+                var (crashedTid, crashedName) = BusiestThread(me, logTid);
+                Thread.Sleep(Math.Max(0, CloseAfterMs - 1000));
                 __android_log_write(6, "MelonLoader", $"[crash watch] closing the game now ({Volatile.Read(ref lines)} crash report lines, the first {KeepLines} kept)");
                 // through Android's crash handler, so it writes its full crash report; killed outright if that
                 // does not end the game within 5 seconds
@@ -71,7 +120,15 @@ internal static class CrashWatch
                 if (androidAbortHandler != IntPtr.Zero)
                 {
                     sigaction(SIGABRT, androidAbortHandler, IntPtr.Zero);
-                    __android_log_write(6, "MelonLoader", "[crash watch] handing the crash to Android for its crash report (look for the tombstone / 'Fatal signal 6' below)");
+                    if (crashedTid > 0)
+                    {
+                        // Android's report then shows that thread's stack, down through the crash
+                        __android_log_write(6, "MelonLoader", $"[crash watch] the crashed thread looks like {crashedTid} ({crashedName}); handing it to Android for its crash report");
+                        tgkill(getpid(), crashedTid, SIGABRT);
+                        Thread.Sleep(2500);
+                        __android_log_write(6, "MelonLoader", "[crash watch] that thread did not take it; closing from here instead");
+                    }
+                    else __android_log_write(6, "MelonLoader", "[crash watch] handing the crash to Android for its crash report");
                     abort();
                 }
                 kill(getpid(), SIGKILL);
